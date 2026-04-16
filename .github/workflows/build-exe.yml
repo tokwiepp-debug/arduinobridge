@@ -1,0 +1,16 @@
+name: Build Windows Executable
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Test input'
+        required: false
+        default: 'hello'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Test
+        run: echo "Hello World"
