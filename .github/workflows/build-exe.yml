@@ -4,11 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       project_path:
-        description: 'Path to project within repo'
-        required: false
-        default: ''
-      main_script:
-        description: 'Main script to build'
+        description: 'Path to project'
         required: false
         default: ''
       python_version:
@@ -16,61 +12,46 @@ on:
         required: false
         default: '3.11'
       artifact_name:
-        description: 'Name for the output artifact'
+        description: 'Output name'
         required: false
         default: ''
-      artifact_retention_days:
-        description: 'Days to keep artifact'
-        required: false
-        default: '30'
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository }}
           path: project
-
-      - name: Show directory
-        run: |
-          Get-ChildItem -Path project -Recurse -Depth 3 | Select-Object FullName
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ github.event.inputs.python_version || '3.11' }}
 
-      - name: Install dependencies
+      - name: Install all dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r project/${{ github.event.inputs.project_path }}/requirements.txt 2>$null || true
+          pip install --upgrade pip
           pip install pyinstaller
+          pip install pyserial pyusb requests flask flask-cors
 
-      - name: Build with PyInstaller
+      - name: Build
         shell: pwsh
         run: |
           $path = "project/${{ github.event.inputs.project_path }}"
-          $script = "arduino_bridge/server.py"
-          $outName = "arduino-bridge"
-          echo "Working in: $path"
-          echo "Script: $script"
+          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { "arduino-bridge" }
           Set-Location $path
-          dir
-          pyinstaller --onefile --name $outName $script 2>&1
+          pyinstaller --onefile --console --name $outName arduino_bridge/server.py 2>&1
           if (Test-Path "dist/$outName.exe") {
-            echo "SUCCESS: dist/$outName.exe created!"
-            dir dist
-          } else {
-            echo "FAIL: dist/$outName.exe not found"
-            dir
+            echo "SUCCESS: dist/$outName.exe"
+            Get-Item "dist/$outName.exe" | Select-Object Name, Length
           }
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.artifact_name || 'exe-output' }}
+          name: ${{ github.event.inputs.artifact_name || 'arduino-bridge' }}
           path: project/${{ github.event.inputs.project_path }}/dist/
-          retention-days: ${{ github.event.inputs.artifact_retention_days || 30 }}
+          retention-days: 30
