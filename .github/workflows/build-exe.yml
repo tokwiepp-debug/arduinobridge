@@ -6,34 +6,26 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository }}
-          path: project
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install deps
-        run: pip install --upgrade pip pyinstaller pyserial pyusb requests flask flask-cors
-
-      - name: Build
-        shell: pwsh
+      
+      - run: pip install pyinstaller flask flask-cors
+      
+      - shell: pwsh
         run: |
-          Set-Location project/arduino_bridge
-          Write-Host "Building server_simple.py..."
-          pyinstaller --onefile --console --noupx --distrib ./dist --workpath ./build --specpath . -n arduino-bridge server_simple.py 2>&1
-          if (Test-Path "dist/arduino-bridge.exe") {
-            Write-Host "SUCCESS"
-            Get-Item "dist/arduino-bridge.exe" | Select-Object Name, Length
+          pyinstaller --onefile --console --noupx -n test-flask test_flask.py 2>&1
+          if (Test-Path "dist/test-flask.exe") {
+            echo "SUCCESS"
+            Get-Item "dist/test-flask.exe" | Select-Object Name, Length
+          } else {
+            echo "FAIL - checking files..."
+            Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
           }
-
-      - name: Upload
-        uses: actions/upload-artifact@v4
+      
+      - uses: actions/upload-artifact@v4
         with:
-          name: arduino-bridge
-          path: project/arduino_bridge/dist/
-          retention-days: 30
+          name: test-flask
+          path: dist/
