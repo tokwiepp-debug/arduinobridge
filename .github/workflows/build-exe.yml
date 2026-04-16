@@ -1,0 +1,186 @@
+name: Build Windows Executable
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_repo:
+        description: 'GitHub repo (owner/repo-name)'
+        required: true
+        default: 'tobzen/arduino-bridge'
+      project_path:
+        description: 'Path to project within repo (e.g., or leave empty for root)'
+        required: false
+        default: ''
+      main_script:
+        description: 'Main script to build (e.g., arduino_bridge/server.py)'
+        required: false
+        default: ''
+      python_version:
+        description: 'Python version'
+        required: false
+        default: '3.11'
+      artifact_name:
+        description: 'Name for the output artifact'
+        required: false
+        default: ''
+      artifact_retention_days:
+        description: 'Days to keep artifact'
+        required: false
+        default: '30'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.project_repo || github.repo }}
+          path: project
+          sparse-checkout: |
+            ${{ github.event.inputs.project_path || '*' }}
+          sparse-checkout-cone-mode: false
+
+      - name: Display project structure
+        run: |
+          echo "Project path: ${{ github.event.inputs.project_path || '.' }}"
+          Get-ChildItem -Path project -Recurse -Depth 2 | Select-Object FullName, Mode
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version || '3.11' }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r project/${{ github.event.inputs.project_path }}/requirements.txt 2>$null || true
+          pip install pyinstaller
+
+      - name: Find main script
+        id: find_script
+        shell: pwsh
+        run: |
+          $path = "project/${{ github.event.inputs.project_path }}"
+          $main = "${{ github.event.inputs.main_script }}"
+          
+          if ($main -ne "") {
+            echo "script=$main" >> $env:GITHUB_OUTPUT
+            echo "Using provided script: $main"
+          } else {
+            # Auto-detect common entry points
+            $candidates = @(
+              "$path/arduino_bridge/server.py",
+              "$path/app.py",
+              "$path/main.py",
+              "$path/cli.py"
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) {
+                $script = $c -replace "project/", ""
+                echo "script=$script" >> $env:GITHUB_OUTPUT
+                echo "Auto-detected main script: $script"
+                break
+              }
+            }
+          }
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          $path = "project/${{ github.event.inputs.project_path }}"
+          $script = "${{ steps.find_script.outputs.script }}"
+          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") {
+            "${{ github.event.inputs.artifact_name }}"
+          } else {
+            [System.IO.Path]::GetFileNameWithoutExtension($script)
+          }
+          
+          Write-Host "Building $script into $outName.exe..."
+          
+          # Generate spec file
+          $specContent = @"
+          # -*- mode: python ; coding: utf-8 -*-
+          import sys
+          import os
+          
+          block_cipher = None
+          
+          a = Analysis(
+              ['$script'],
+              pathex=[os.path.abspath('.')],
+              binaries=[],
+              datas=[],
+              hiddenimports=[],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              win_no_prefer_redirects=False,
+              win_private_assemblies=False,
+              cipher=block_cipher,
+              noarchive=False,
+          )
+          
+          PYZ = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+          
+          exe = EXE(
+              PYZ,
+              a.scripts,
+              [],
+              exclude_binaries=True,
+              name='$outName',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              console=True,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+          )
+          
+          coll = COLLECT(
+              exe,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              name='$outName',
+          )
+"@
+          
+          $specContent | Out-File -FilePath "build.spec" -Encoding UTF8
+          Write-Host "Spec file created"
+          
+          # Run pyinstaller
+          pyinstaller build.spec --clean 2>&1
+          
+          if (Test-Path "dist/$outName/$outName.exe") {
+            Write-Host "Build successful!"
+            Get-ChildItem "dist/$outName" | Format-Table Name, Length -AutoSize
+          } else {
+            Write-Host "Build may have failed - checking dist/..."
+            Get-ChildItem "dist" -Recurse -File | Format-Table FullName, Length -AutoSize
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.artifact_name || 'exe-output' }}
+          path: dist/
+          retention-days: ${{ github.event.inputs.artifact_retention_days || 30 }}
+
+      - name: Summary
+        run: |
+          echo "## Build Complete" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "**Artifact:** `${{ github.event.inputs.artifact_name || 'exe-output' }}`" >> $env:GITHUB_STEP_SUMMARY
+          echo "**Download from:** Actions tab > run > Artifacts" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "Note: Artifacts are available for ${{ github.event.inputs.artifact_retention_days || 30 }} days." >> $env:GITHUB_STEP_SUMMARY
