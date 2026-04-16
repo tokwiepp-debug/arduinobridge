@@ -31,25 +31,29 @@ jobs:
         with:
           python-version: ${{ github.event.inputs.python_version || '3.11' }}
 
-      - name: Install Nuitka and dependencies
+      - name: Install deps
         run: |
           pip install --upgrade pip
-          pip install nuitka
+          pip install pyinstaller
           pip install pyserial pyusb requests flask flask-cors
 
-      - name: Build with Nuitka
+      - name: Build
         shell: pwsh
         run: |
           $path = "project/${{ github.event.inputs.project_path }}"
           $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { "arduino-bridge" }
           Set-Location $path
-          python -m nuitka --onefile --windows-console-mode=attach --output-filename=dist/$outName.exe --remove-output arduino_bridge/server.py 2>&1
+          # Remove old dist
+          if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
+          # Build with no compression issues
+          pyinstaller --onefile --console --no-upx --剥离-output dist/$outName.exe arduino_bridge/server.py 2>&1
+          # Check result
           if (Test-Path "dist/$outName.exe") {
-            echo "SUCCESS"
-            Get-Item "dist/$outName.exe" | Select-Object Name, Length
+            $file = Get-Item "dist/$outName.exe"
+            echo "SUCCESS: Size = $($file.Length / 1MB) MB"
           } else {
-            echo "FAIL - checking for build output..."
-            Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
+            echo "FAIL - listing files:"
+            Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName, Length
           }
 
       - name: Upload
