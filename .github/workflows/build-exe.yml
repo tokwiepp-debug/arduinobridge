@@ -14,8 +14,8 @@ jobs:
           python-version: '3.11'
           architecture: 'x64'
       - name: Install deps
-        run: pip install pyinstaller pyserial
-      - name: Build GUI
+        run: pip install pyinstaller pyserial websocket-client
+      - name: Build
         run: pyinstaller --onefile --windowed --noupx -n arduino-bridge-gui arduino_bridge_gui.py
       - name: Upload
         uses: actions/upload-artifact@v4
