@@ -56,12 +56,14 @@ jobs:
           $main = "${{ github.event.inputs.main_script }}"
           if ($main -ne "") {
             echo "script=$main" >> $env:GITHUB_OUTPUT
+            echo "Using provided: $main"
           } else {
             $candidates = @("project/arduino_bridge/server.py", "project/app.py", "project/main.py")
             foreach ($c in $candidates) {
               if (Test-Path $c) {
                 $script = $c -replace "project/", ""
                 echo "script=$script" >> $env:GITHUB_OUTPUT
+                echo "Auto-detected: $script"
                 break
               }
             }
@@ -69,16 +71,17 @@ jobs:
 
       - name: Build with PyInstaller
         shell: pwsh
+        working-directory: project/${{ github.event.inputs.project_path }}
         run: |
-          $path = "project/${{ github.event.inputs.project_path }}"
           $script = "${{ steps.find_script.outputs.script }}"
           $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { [System.IO.Path]::GetFileNameWithoutExtension($script) }
-          echo "Building: $script -> $outName.exe"
-          pyinstaller --onefile --distrib ./$script --name $outName 2>&1
+          echo "Building $script into $outName.exe..."
+          pyinstaller --onefile --name $outName $script 2>&1
+          dir dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.inputs.artifact_name || 'exe-output' }}
-          path: dist/
+          path: project/${{ github.event.inputs.project_path }}/dist/
           retention-days: ${{ github.event.inputs.artifact_retention_days || 30 }}
