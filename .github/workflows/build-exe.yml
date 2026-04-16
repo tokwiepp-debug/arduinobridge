@@ -1,64 +1,32 @@
 name: Build Windows Executable
-
 on:
   workflow_dispatch:
-    inputs:
-      project_path:
-        description: 'Path to project'
-        required: false
-        default: ''
-      python_version:
-        description: 'Python version'
-        required: false
-        default: '3.11'
-      artifact_name:
-        description: 'Output name'
-        required: false
-        default: ''
-
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository }}
-          path: project
-
-      - name: Set up Python
+      
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ github.event.inputs.python_version || '3.11' }}
-
-      - name: Install deps
-        run: |
-          pip install --upgrade pip
-          pip install pyinstaller
-          pip install pyserial pyusb requests flask flask-cors
-
+          python-version: '3.11'
+      
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+      
       - name: Build
         shell: pwsh
         run: |
-          $path = "project/${{ github.event.inputs.project_path }}"
-          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { "arduino-bridge" }
-          Set-Location $path
-          # Remove old dist
-          if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-          # Build with no compression issues
-          pyinstaller --onefile --console --no-upx --剥离-output dist/$outName.exe arduino_bridge/server.py 2>&1
-          # Check result
-          if (Test-Path "dist/$outName.exe") {
-            $file = Get-Item "dist/$outName.exe"
-            echo "SUCCESS: Size = $($file.Length / 1MB) MB"
-          } else {
-            echo "FAIL - listing files:"
-            Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName, Length
+          pyinstaller --onefile --console --name hello test_hello.py 2>&1
+          if (Test-Path "dist/hello.exe") {
+            echo "SUCCESS"
+            Get-Item "dist/hello.exe" | Select-Object Name, Length
           }
-
+      
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.artifact_name || 'arduino-bridge' }}
-          path: project/${{ github.event.inputs.project_path }}/dist/
-          retention-days: 30
+          name: hello-test
+          path: dist/
