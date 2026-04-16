@@ -1,15 +1,6 @@
 name: Build Windows Executable
 on:
   workflow_dispatch:
-    inputs:
-      project_path:
-        description: 'Path to project'
-        required: false
-        default: ''
-      artifact_name:
-        description: 'Output name'
-        required: false
-        default: ''
 
 jobs:
   build:
@@ -29,43 +20,20 @@ jobs:
       - name: Install deps
         run: pip install --upgrade pip pyinstaller pyserial pyusb requests flask flask-cors
 
-      - name: Show structure
-        shell: pwsh
-        run: |
-          $path = "project/${{ github.event.inputs.project_path }}"
-          Get-ChildItem $path -Recurse | Select-Object FullName
-
       - name: Build
         shell: pwsh
         run: |
-          $path = "project/${{ github.event.inputs.project_path }}"
-          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { "arduino-bridge" }
-          Set-Location $path
-          
-          # First try direct pyinstaller with full path
-          $script = "arduino_bridge/server.py"
-          Write-Host "Building: $script"
-          
-          try {
-            pyinstaller --onefile --console --noupx --distrib ./dist --workpath ./build --specpath . -n $outName $script 2>&1 | Tee-Object -Variable output
-            Write-Host "PYINSTALLER OUTPUT: $output"
-          } catch {
-            Write-Host "ERROR: $_"
+          Set-Location project/arduino_bridge
+          Write-Host "Building server_simple.py..."
+          pyinstaller --onefile --console --noupx --distrib ./dist --workpath ./build --specpath . -n arduino-bridge server_simple.py 2>&1
+          if (Test-Path "dist/arduino-bridge.exe") {
+            Write-Host "SUCCESS"
+            Get-Item "dist/arduino-bridge.exe" | Select-Object Name, Length
           }
-          
-          Write-Host "--- Checking dist folder ---"
-          if (Test-Path "dist") {
-            Get-ChildItem "dist" -Recurse | Select-Object FullName, Length
-          } else {
-            Write-Host "No dist folder"
-          }
-          
-          Write-Host "--- Checking for exe anywhere ---"
-          Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.artifact_name || 'arduino-bridge' }}
-          path: project/${{ github.event.inputs.project_path }}/dist/
+          name: arduino-bridge
+          path: project/arduino_bridge/dist/
           retention-days: 30
