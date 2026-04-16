@@ -5,27 +5,45 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: project
+
+      - name: Set up Python x64
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - run: pip install pyinstaller flask flask-cors
-      
-      - shell: pwsh
+          architecture: 'x64'
+
+      - name: Install deps
         run: |
-          pyinstaller --onefile --console --noupx -n test-flask test_flask.py 2>&1
+          pip install --upgrade pip
+          pip install pyinstaller flask flask-cors pyserial pyusb requests
+
+      - name: Build x64
+        run: |
+          $ErrorActionPreference = "Continue"
+          Set-Location project/arduino_bridge
+          Write-Host "Python architecture: $((python -c 'import struct; print(struct.calcsize("P") * 8)'))"
+          pyinstaller --onefile --console --noupx --target-os=win64 --target-arch=x64 -n test-flask ../test_flask.py 2>&1
           if (Test-Path "dist/test-flask.exe") {
-            echo "SUCCESS"
-            Get-Item "dist/test-flask.exe" | Select-Object Name, Length
+            Write-Host "SUCCESS"
+            Get-Item "dist/test-flask.exe" | Select-Object Name, Length, @{N='Arch';E={'x64'}}
           } else {
-            echo "FAIL - checking files..."
+            Write-Host "FAIL"
             Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
           }
-      
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
-          name: test-flask
-          path: dist/
+          name: test-flask-x64
+          path: project/arduino_bridge/dist/
+          retention-days: 30
