@@ -3,14 +3,82 @@ name: Build Windows Executable
 on:
   workflow_dispatch:
     inputs:
-      test:
-        description: 'Test input'
+      project_path:
+        description: 'Path to project within repo'
         required: false
-        default: 'hello'
+        default: ''
+      main_script:
+        description: 'Main script to build'
+        required: false
+        default: ''
+      python_version:
+        description: 'Python version'
+        required: false
+        default: '3.11'
+      artifact_name:
+        description: 'Name for the output artifact'
+        required: false
+        default: ''
+      artifact_retention_days:
+        description: 'Days to keep artifact'
+        required: false
+        default: '30'
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Test
-        run: echo "Hello World"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: project
+          sparse-checkout: |
+            ${{ github.event.inputs.project_path || '*' }}
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version || '3.11' }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r project/${{ github.event.inputs.project_path }}/requirements.txt 2>$null || true
+          pip install pyinstaller
+
+      - name: Find main script
+        id: find_script
+        shell: pwsh
+        run: |
+          $path = "project/${{ github.event.inputs.project_path }}"
+          $main = "${{ github.event.inputs.main_script }}"
+          if ($main -ne "") {
+            echo "script=$main" >> $env:GITHUB_OUTPUT
+          } else {
+            $candidates = @("project/arduino_bridge/server.py", "project/app.py", "project/main.py")
+            foreach ($c in $candidates) {
+              if (Test-Path $c) {
+                $script = $c -replace "project/", ""
+                echo "script=$script" >> $env:GITHUB_OUTPUT
+                break
+              }
+            }
+          }
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          $path = "project/${{ github.event.inputs.project_path }}"
+          $script = "${{ steps.find_script.outputs.script }}"
+          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { [System.IO.Path]::GetFileNameWithoutExtension($script) }
+          echo "Building: $script -> $outName.exe"
+          pyinstaller --onefile --distrib ./$script --name $outName 2>&1
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.artifact_name || 'exe-output' }}
+          path: dist/
+          retention-days: ${{ github.event.inputs.artifact_retention_days || 30 }}
