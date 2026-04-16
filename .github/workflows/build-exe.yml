@@ -8,38 +8,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository }}
-          path: project
 
-      - name: Set up Python x64
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           architecture: 'x64'
 
-      - name: Verify Python
-        run: |
-          python --version
-          python -c "import struct; print(f'Python is {struct.calcsize("P") * 8}-bit')"
-
       - name: Install deps
-        run: pip install --upgrade pip pyinstaller flask flask-cors
+        run: pip install pyinstaller flask flask-cors
 
       - name: Build
-        shell: pwsh
-        run: |
-          Set-Location project/arduino_bridge
-          $env:PYTHONARCH = "x64"
-          Write-Host "Building test_flask.py..."
-          pyinstaller --onefile --console --noupx -n test-flask ../test_flask.py 2>&1
-          if (Test-Path "dist/test-flask.exe") {
-            $file = Get-Item "dist/test-flask.exe"
-            Write-Host "SUCCESS: $($file.Name) - $($file.Length) bytes"
-          }
+        run: pyinstaller --onefile --console --noupx -n test-flask test_flask.py
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: test-flask
-          path: project/arduino_bridge/dist/
+          path: dist/
