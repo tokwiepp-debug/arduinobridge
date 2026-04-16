@@ -1,32 +1,74 @@
 name: Build Windows Executable
 on:
   workflow_dispatch:
+    inputs:
+      project_path:
+        description: 'Path to project'
+        required: false
+        default: ''
+      artifact_name:
+        description: 'Output name'
+        required: false
+        default: ''
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Setup Python
+        with:
+          repository: ${{ github.repository }}
+          path: project
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install PyInstaller
-        run: pip install pyinstaller
-      
+
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install pyserial pyusb requests flask flask-cors
+
       - name: Build
         shell: pwsh
         run: |
-          pyinstaller --onefile --console --name hello test_hello.py 2>&1
-          if (Test-Path "dist/hello.exe") {
-            echo "SUCCESS"
-            Get-Item "dist/hello.exe" | Select-Object Name, Length
+          $path = "project/${{ github.event.inputs.project_path }}"
+          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { "arduino-bridge" }
+          Set-Location $path
+          if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+          if (Test-Path "*.spec") { Remove-Item -Force "*.spec" }
+          
+          # Build with hidden imports for all deps
+          pyinstaller --onefile `
+            --console `
+            --add-data "plugins:plugins" `
+            --hidden-import=flask `
+            --hidden-import=flask_cors `
+            --hidden-import=pyserial `
+            --hidden-import=serial `
+            --hidden-import=usb.core `
+            --hidden-import=usb.util `
+            --hidden-import=requests `
+            --name $outName `
+            --distrib ./dist `
+            arduino_bridge/server.py 2>&1
+          
+          echo "--- Build Output ---"
+          if (Test-Path "dist/$outName.exe") {
+            $file = Get-Item "dist/$outName.exe"
+            echo "SUCCESS: Size = $([math]::Round($file.Length / 1MB, 2)) MB"
+          } else {
+            echo "FAIL - no exe found"
+            Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
           }
-      
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: hello-test
-          path: dist/
+          name: ${{ github.event.inputs.artifact_name || 'arduino-bridge' }}
+          path: project/${{ github.event.inputs.project_path }}/dist/
+          retention-days: 30
