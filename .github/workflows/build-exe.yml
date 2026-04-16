@@ -33,9 +33,10 @@ jobs:
         with:
           repository: ${{ github.repository }}
           path: project
-          sparse-checkout: |
-            ${{ github.event.inputs.project_path || '*' }}
-          sparse-checkout-cone-mode: false
+
+      - name: Show directory
+        run: |
+          Get-ChildItem -Path project -Recurse -Depth 3 | Select-Object FullName
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -48,36 +49,24 @@ jobs:
           pip install -r project/${{ github.event.inputs.project_path }}/requirements.txt 2>$null || true
           pip install pyinstaller
 
-      - name: Find main script
-        id: find_script
+      - name: Build with PyInstaller
         shell: pwsh
         run: |
           $path = "project/${{ github.event.inputs.project_path }}"
-          $main = "${{ github.event.inputs.main_script }}"
-          if ($main -ne "") {
-            echo "script=$main" >> $env:GITHUB_OUTPUT
-            echo "Using provided: $main"
-          } else {
-            $candidates = @("project/arduino_bridge/server.py", "project/app.py", "project/main.py")
-            foreach ($c in $candidates) {
-              if (Test-Path $c) {
-                $script = $c -replace "project/", ""
-                echo "script=$script" >> $env:GITHUB_OUTPUT
-                echo "Auto-detected: $script"
-                break
-              }
-            }
-          }
-
-      - name: Build with PyInstaller
-        shell: pwsh
-        working-directory: project/${{ github.event.inputs.project_path }}
-        run: |
-          $script = "${{ steps.find_script.outputs.script }}"
-          $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { [System.IO.Path]::GetFileNameWithoutExtension($script) }
-          echo "Building $script into $outName.exe..."
+          $script = "arduino_bridge/server.py"
+          $outName = "arduino-bridge"
+          echo "Working in: $path"
+          echo "Script: $script"
+          Set-Location $path
+          dir
           pyinstaller --onefile --name $outName $script 2>&1
-          dir dist
+          if (Test-Path "dist/$outName.exe") {
+            echo "SUCCESS: dist/$outName.exe created!"
+            dir dist
+          } else {
+            echo "FAIL: dist/$outName.exe not found"
+            dir
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
