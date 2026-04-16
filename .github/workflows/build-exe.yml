@@ -27,10 +27,13 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
+        run: pip install --upgrade pip pyinstaller pyserial pyusb requests flask flask-cors
+
+      - name: Show structure
+        shell: pwsh
         run: |
-          pip install --upgrade pip
-          pip install pyinstaller
-          pip install pyserial pyusb requests flask flask-cors
+          $path = "project/${{ github.event.inputs.project_path }}"
+          Get-ChildItem $path -Recurse | Select-Object FullName
 
       - name: Build
         shell: pwsh
@@ -38,33 +41,27 @@ jobs:
           $path = "project/${{ github.event.inputs.project_path }}"
           $outName = if ("${{ github.event.inputs.artifact_name }}" -ne "") { "${{ github.event.inputs.artifact_name }}" } else { "arduino-bridge" }
           Set-Location $path
-          if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          if (Test-Path "*.spec") { Remove-Item -Force "*.spec" }
           
-          # Build with hidden imports for all deps
-          pyinstaller --onefile `
-            --console `
-            --add-data "plugins:plugins" `
-            --hidden-import=flask `
-            --hidden-import=flask_cors `
-            --hidden-import=pyserial `
-            --hidden-import=serial `
-            --hidden-import=usb.core `
-            --hidden-import=usb.util `
-            --hidden-import=requests `
-            --name $outName `
-            --distrib ./dist `
-            arduino_bridge/server.py 2>&1
+          # First try direct pyinstaller with full path
+          $script = "arduino_bridge/server.py"
+          Write-Host "Building: $script"
           
-          echo "--- Build Output ---"
-          if (Test-Path "dist/$outName.exe") {
-            $file = Get-Item "dist/$outName.exe"
-            echo "SUCCESS: Size = $([math]::Round($file.Length / 1MB, 2)) MB"
-          } else {
-            echo "FAIL - no exe found"
-            Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
+          try {
+            pyinstaller --onefile --console --noupx --distrib ./dist --workpath ./build --specpath . -n $outName $script 2>&1 | Tee-Object -Variable output
+            Write-Host "PYINSTALLER OUTPUT: $output"
+          } catch {
+            Write-Host "ERROR: $_"
           }
+          
+          Write-Host "--- Checking dist folder ---"
+          if (Test-Path "dist") {
+            Get-ChildItem "dist" -Recurse | Select-Object FullName, Length
+          } else {
+            Write-Host "No dist folder"
+          }
+          
+          Write-Host "--- Checking for exe anywhere ---"
+          Get-ChildItem . -Recurse -Filter "*.exe" | Select-Object FullName
 
       - name: Upload
         uses: actions/upload-artifact@v4
