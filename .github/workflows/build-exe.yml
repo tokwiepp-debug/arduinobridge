@@ -8,19 +8,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           architecture: 'x64'
-
       - name: Install deps
-        run: pip install pyinstaller flask flask-cors pyserial pyusb requests
-
+        run: pip install pyinstaller flask flask-cors pyserial
       - name: Build
         run: pyinstaller --onefile --console --noupx -n arduino-bridge arduino_bridge/__init__.py
-
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
